@@ -2,10 +2,12 @@
 #include "stat.h"
 #include "user.h"
 #include "condvar.h"
+#include "fcntl.h"
 
 //We want Child 1 to execute first, then Child 2, and finally Parent.
 int main() {
     struct condvar cv;
+    int fd = open("flag", O_RDWR | O_CREATE);
     init_lock(&cv.lk);
     int pid = fork(); //fork the first child
     if(pid < 0) {
@@ -14,6 +16,7 @@ int main() {
         sleep(5);
         printf(1, "Child 1 Executing\n");
         lock(&cv.lk);
+        write(fd, "done", 4);
         cv_signal(&cv);
         unlock(&cv.lk);
     } else {
@@ -22,6 +25,14 @@ int main() {
             printf(1, "Error forking second child.\n");
         } else if(pid == 0) {
             lock(&cv.lk);
+            struct stat stats;
+            fstat(fd, &stats);
+            printf(1, "file size = %d\n", stats.size);
+            while(stats.size <= 0){
+                cv_wait(&cv);
+                fstat(fd, &stats);
+                printf(1, "file size = %d\n", stats.size);
+            }
             cv_wait(&cv);
             unlock(&cv.lk);
             printf(1, "Child 2 Executing\n");
@@ -35,5 +46,7 @@ int main() {
             printf(1, "Parent exiting.\n");
         }
     }
+    close(fd);
+    unlink("flag");
     exit();
 }
